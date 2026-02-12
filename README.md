@@ -13,12 +13,30 @@ A collaborative Reddit game where community participation powers a virtual facto
 
 ## Features
 
-- Real-time community contributions (upvotes, comments)
-- Daily voting twist system with multipliers
-- Leaderboard and top contributors
-- Factory animation powered by GameMaker
-- Victory cinematic (shake + overlay + GameMaker trigger)
-- Mobile-responsive design
+### Core Gameplay
+- **Real-time Reddit activity tracking**: Polls post stats every 10s (comments, upvotes)
+- **Heartbeat energy system**: +3 base energy per tick, multiplied by active boosts
+- **Daily voting system**: Three multiplier options (1.5x, 2x, 3x) with varying durations
+- **Downvote pressure**: Net downvotes reduce energy (-3 per downvote, up to 50/tick)
+- **Victory condition**: Reach 10,000 energy to complete the day
+- **Daily reset**: All progress resets at 00:00 UTC
+
+### Technical Features
+- **Live post stats**: `reddit.getPostById()` fetches real comment/score counts
+- **Delta-based contributions**: Only new activity since last poll generates energy
+- **Contribution caps**: 100 comments / 200 upvotes per 10s poll (anti-spam)
+- **Cumulative audit tracking**: Δ Comments/Upvotes persist until reset
+- **Leaderboard**: Top contributors ranked by energy contribution
+- **Factory animation**: GameMaker HTML5 with postMessage bridge
+- **Victory cinematic**: Screen shake + overlay + GameMaker trigger sequence
+- **Mod-only demo mode**: Instant energy boost for testing (moderators only)
+
+### UX & Design
+- **Glass morphism UI**: CSS custom properties (`--kf-*` tokens)
+- **Purple/teal gradient theme**: Consistent across all components
+- **Responsive layout**: Works on mobile and desktop
+- **Toast notifications**: Real-time feedback for boosts and penalties
+- **Audit panel**: Dev transparency (polls, deltas, multipliers, events)
 
 ## Quick Start
 
@@ -68,10 +86,27 @@ karmafoundry/
 
 All handled in `src/server/index.ts`:
 
-- `GET /api/stateSync` - Full game state
-- `POST /api/poll` - Check for new contributions
-- `POST /api/vote` - Cast daily vote
-- `POST /api/claim` - Claim rewards
+- `GET /api/stateSync` - Full game state + audit data
+  - Returns: totals, dailyGoal, multiplier, leaderboard, top3, victory, audit
+  - Audit includes: lastPollAt, cumulative Δ comments/upvotes/downs, active multiplier
+- `POST /api/poll` - Check for new Reddit activity
+  - Fetches post stats via `reddit.getPostById(postId)`
+  - Computes deltas vs cursor (new comments/upvotes since last poll)
+  - Applies heartbeat (+3) + Reddit deltas × multiplier
+  - Returns: boost (if energy gained), penalty (if downvotes), `_debug` payload
+- `POST /api/poll?demo=1` - Demo boost (mod-only)
+  - Instant +52 energy (42 base + 10 from simulated activity)
+  - Bypasses post stats, awards 25 pts to user
+- `POST /api/vote` - Cast daily vote (once per user per day)
+  - Body: `{optionId: "boost" | "mega" | "steady"}`
+  - Activates multiplier (1.5x-3x) for 30min-2hrs
+  - Awards +5 energy + 50 pts to voter
+- `POST /api/claim` - Claim victory reward
+  - Only available when dailyGoal.achieved = true
+  - Awards +200 pts to claimer
+- `POST /api/admin/resetDay` - Reset day state (mod-only)
+  - Clears energy, votes, cursor, leaderboard
+  - Creates fresh day state with same dayKey
 
 ## GameMaker Integration
 

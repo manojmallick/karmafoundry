@@ -113,12 +113,46 @@
 Every 10 seconds:
   1. Frontend → POST /api/poll
   2. Backend → getPostStats(postId)
-  3. Reddit API → returns {commentCount, score}
-  4. Backend → Calculate deltas vs cursor
-  5. Backend → applyContributions(deltas)
-  6. Backend → Update cursor
-  7. Backend → Return boost info
-  8. Frontend → Show toast, send to GameMaker
+  3. Reddit API → returns {commentCount, score, ok: true}
+  4. Backend → Load poll cursor from KV
+     cursor = {
+       lastCommentCount: 3,     // absolute count from last poll
+       lastScore: 1,            // absolute score from last poll
+       lastDeltaComments: 0,    // per-tick delta (not cumulative)
+       lastDeltaUpvotes: 0,
+       totalDeltaDown: 0,       // cumulative downvotes
+       updatedAt: timestamp
+     }
+  5. Backend → Calculate per-tick deltas:
+     deltaComments = max(0, newCount - cursor.lastCommentCount)
+     deltaScore = newScore - cursor.lastScore
+     deltaUpvotes = max(0, deltaScore)
+     deltaDown = max(0, -deltaScore)
+  6. Backend → Cap deltas (anti-spam):
+     cappedComments = min(deltaComments, 100)
+     cappedUpvotes = min(deltaUpvotes, 200)
+     cappedDown = min(deltaDown, 50)
+  7. Backend → Build contribution events:
+     events = [
+       { kind: "SYSTEM", count: 1, baseEnergyPerEvent: 3 },  // heartbeat
+       { kind: "COMMENT", count: cappedComments, baseEnergyPerEvent: 2 },
+       { kind: "UPVOTE", count: cappedUpvotes, baseEnergyPerEvent: 1 }
+     ]
+  8. Backend → applyContributions(events)
+     - Loads day state, checks active multiplier
+     - For each event: finalEnergy = baseEnergy × multiplier
+     - Increments state.totals.energy, .comments, .upvotes
+     - Records contribution for user (system)
+  9. Backend → Handle downvote penalty (if deltaDown > 0):
+     penaltyEnergy = cappedDown × 3
+     applyPenalty() → reduces state.totals.energy
+  10. Backend → Update poll cursor:
+     cursor.lastCommentCount = newCount
+     cursor.lastScore = newScore
+     cursor.totalDeltaDown += cappedDown
+     cursor.updatedAt = now
+  11. Backend → Return boost + penalty + _debug
+  12. Frontend → Show toast, send BOOST_APPLIED to GameMaker
 ```
 
 ### 2. State Synchronization
@@ -126,15 +160,37 @@ Every 10 seconds:
 ```
 Every 10 seconds:
   1. Frontend → GET /api/stateSync
-  2. Backend → loadDayState()
-  3. Backend → loadVotes()
-  4. Backend → loadUsers()
-  5. Backend → loadLeaderboard()
-  6. Backend → Load top3 + victory flags
-  7. Backend → Return state
-  8. Frontend → Update React state
-  9. Frontend → Send STATE_SYNC to GameMaker
-  10. GameMaker → Update visuals
+  2. Backend → rolloverIfNeeded() (checks if new day)
+  3. Backend → loadDayState()
+     state = {
+       dayKey: "2026-02-12",
+       totals: { energy: 817, comments: 4, upvotes: 0 },
+       dailyGoal: { target: 10000, achieved: false, rewardState: "UNCLAIMED" },
+       activeMultiplier?: { optionId, value: 3, expiresAt, durationMs }
+     }
+  4. Backend → loadVotes() + loadUsers()
+  5. Backend → Load leaderboard (top 25)
+  6. Backend → Load top3 contributors
+  7. Backend → Load poll cursor for audit:
+     audit = {
+       dayKey,
+       lastPollAt: cursor.updatedAt,
+       lastDeltaComments: state.totals.comments,     // cumulative!
+       lastDeltaUpvotes: state.totals.upvotes,        // cumulative!
+       lastDeltaDown: cursor.totalDeltaDown,          // cumulative!
+       multiplierActive: boolean,
+       multiplierValue: number | null,
+       multiplierExpiresAt: timestamp | null,
+       last10Events: [ audit events ]
+     }
+  8. Backend → Check victory flags:
+     - completedAt: timestamp when goal was reached (once per day)
+     - justCompleted: true if this is first fetch since completion
+  9. Backend → Return full state + audit
+  10. Frontend → Update React state
+  11. Frontend → Send STATE_SYNC to GameMaker
+  12. GameMaker → Update factory visuals
+  13. Frontend → Update audit panel (if open)
 ```
 
 ### 3. Victory Sequence
