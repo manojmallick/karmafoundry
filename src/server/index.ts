@@ -218,8 +218,13 @@ const server = createServer(async (req, res) => {
 
       console.log(`[KF] Poll deltas: comments=${cappedComments}, upvotes=${cappedUpvotes}, down=${cappedDown}`);
 
-      // Build contribution events from real stats
+      // Build contribution events from real stats + baseline heartbeat
       const events: { kind: "COMMENT" | "UPVOTE" | "SYSTEM"; count: number; baseEnergyPerEvent: number }[] = [];
+
+      // Baseline heartbeat: every poll tick generates a small amount of energy
+      // so the multiplier always has something to boost
+      events.push({ kind: "SYSTEM", count: 1, baseEnergyPerEvent: 3 });
+
       if (cappedComments > 0) {
         events.push({ kind: "COMMENT", count: cappedComments, baseEnergyPerEvent: 2 });
       }
@@ -230,38 +235,37 @@ const server = createServer(async (req, res) => {
       let boost: any = undefined;
       let applyRes: any = { deltaEnergy: 0 };
 
-      if (events.length > 0) {
-        applyRes = await applyContributions(
-          kv,
-          subredditId,
-          dayKey,
-          cfg,
-          events,
-          { userHash: "system", display: "System" }
-        );
-        console.log(`[KF] Poll applied: deltaEnergy=${applyRes.deltaEnergy}, multiplier=${applyRes.appliedMultiplier?.value ?? 1}`);
+      // Always apply — heartbeat guarantees at least one event
+      applyRes = await applyContributions(
+        kv,
+        subredditId,
+        dayKey,
+        cfg,
+        events,
+        { userHash: "system", display: "System" }
+      );
+      console.log(`[KF] Poll applied: deltaEnergy=${applyRes.deltaEnergy}, multiplier=${applyRes.appliedMultiplier?.value ?? 1}`);
 
-        if (applyRes.deltaEnergy > 0) {
-          boost = {
-            source: "SYSTEM",
-            deltaEnergy: applyRes.deltaEnergy,
-            multiplier: applyRes.appliedMultiplier?.value,
-            multiplierDurationMs: applyRes.appliedMultiplier?.durationMs,
-          };
+      if (applyRes.deltaEnergy > 0) {
+        boost = {
+          source: "SYSTEM",
+          deltaEnergy: applyRes.deltaEnergy,
+          multiplier: applyRes.appliedMultiplier?.value,
+          multiplierDurationMs: applyRes.appliedMultiplier?.durationMs,
+        };
 
-          await pushAuditEvent(kv, subredditId, dayKey, {
-            type: "BOOST_APPLIED",
-            source: "SYSTEM",
-            deltaEnergy: boost.deltaEnergy,
-            multiplier: boost.multiplier ?? null,
-            at: Date.now(),
-            meta: {
-              reason: "Reddit activity",
-              deltaComments: cappedComments,
-              deltaUpvotes: cappedUpvotes,
-            },
-          });
-        }
+        await pushAuditEvent(kv, subredditId, dayKey, {
+          type: "BOOST_APPLIED",
+          source: "SYSTEM",
+          deltaEnergy: boost.deltaEnergy,
+          multiplier: boost.multiplier ?? null,
+          at: Date.now(),
+          meta: {
+            reason: cappedComments > 0 || cappedUpvotes > 0 ? "Reddit activity" : "Heartbeat",
+            deltaComments: cappedComments,
+            deltaUpvotes: cappedUpvotes,
+          },
+        });
       }
 
       // Update poll cursor with current values
