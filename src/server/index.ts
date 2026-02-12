@@ -201,6 +201,9 @@ const server = createServer(async (req, res) => {
         lastDeltaComments: 0,
         lastDeltaUpvotes: 0,
         lastDeltaDown: 0,
+        totalDeltaComments: 0,
+        totalDeltaUpvotes: 0,
+        totalDeltaDown: 0,
         updatedAt: 0,
       };
       console.log(`[KF] Poll cursor: lastComments=${cursor.lastCommentCount}, lastScore=${cursor.lastScore}`);
@@ -274,13 +277,16 @@ const server = createServer(async (req, res) => {
         });
       }
 
-      // Update poll cursor — only update absolute counts if API succeeded
+      // Update poll cursor — accumulate deltas since reset
       await kv.set(pollKey, {
         lastCommentCount: stats.ok ? stats.commentCount : cursor.lastCommentCount,
         lastScore: stats.ok ? stats.score : cursor.lastScore,
         lastDeltaComments: cappedComments,
         lastDeltaUpvotes: cappedUpvotes,
         lastDeltaDown: cappedDown,
+        totalDeltaComments: (cursor.totalDeltaComments ?? 0) + cappedComments,
+        totalDeltaUpvotes: (cursor.totalDeltaUpvotes ?? 0) + cappedUpvotes,
+        totalDeltaDown: (cursor.totalDeltaDown ?? 0) + cappedDown,
         updatedAt: Date.now(),
       });
 
