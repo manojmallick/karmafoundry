@@ -359,6 +359,14 @@ Game:  [anim]             [boost anim]
 │ Display hash    │  protection
 │ No PII stored   │
 └─────────────────┘
+
+┌─────────────────┐
+│ Mod-Only Actions│
+├─────────────────┤
+│ Demo boost      │  Permission
+│ Reset day       │  check via
+│ Returns 403     │  getModerators
+└─────────────────┘
 ```
 
 ## Scaling Considerations

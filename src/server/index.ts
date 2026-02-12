@@ -149,6 +149,18 @@ const server = createServer(async (req, res) => {
         : `Player ${userHash.slice(0, 6)}`;
 
       if (demo) {
+        const isMod = await isCurrentUserMod();
+        if (!isMod) {
+          await pushAuditEvent(kv, subredditId, dayKey, {
+            type: "DEMO_DENIED",
+            source: userHash,
+            at: Date.now(),
+            meta: { action: "demoBoost" },
+          });
+          sendJson(res, { ok: false, error: "DEMO_FORBIDDEN" }, 403);
+          return;
+        }
+
         const applyRes = await applyDemoBoost(kv, subredditId, dayKey, cfg);
 
         await addUserPoints(

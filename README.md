@@ -95,8 +95,10 @@ All handled in `src/server/index.ts`:
   - Applies heartbeat (+3) + Reddit deltas × multiplier
   - Returns: boost (if energy gained), penalty (if downvotes), `_debug` payload
 - `POST /api/poll?demo=1` - Demo boost (mod-only)
+  - **Requires moderator permissions** — returns 403 `{ok:false, error:"DEMO_FORBIDDEN"}` if not mod
   - Instant +52 energy (42 base + 10 from simulated activity)
   - Bypasses post stats, awards 25 pts to user
+  - Logs `DEMO_DENIED` audit event if unauthorized
 - `POST /api/vote` - Cast daily vote (once per user per day)
   - Body: `{optionId: "boost" | "mega" | "steady"}`
   - Activates multiplier (1.5x-3x) for 30min-2hrs
