@@ -14,7 +14,8 @@ import {
   resetDayState,
   applyPenalty,
 } from "./kv/ops";
-import { CAP_NET_DOWN, ENERGY_PENALTY_PER_DOWN } from "../shared/constants";
+import { CAP_NET_DOWN, ENERGY_PENALTY_PER_DOWN, CAP_COMMENTS, CAP_UPVOTES } from "../shared/constants";
+import { getPostStats } from "./reddit/postStats";
 
 // ---- Helpers ----
 
@@ -31,7 +32,7 @@ function hashUserId(userId: string): string {
 
 async function isCurrentUserMod(): Promise<boolean> {
   try {
-    const username = context.userName ?? (context as any).username;
+    const username = context.username ?? (context as any).username;
     if (!username) return false;
     const mods = reddit.getModerators({
       subredditName: context.subredditName,
@@ -143,8 +144,8 @@ const server = createServer(async (req, res) => {
       const demo = url.searchParams.get("demo") === "1";
       const cfg = await loadConfig(kv, subredditId);
       const { dayKey } = await rolloverIfNeeded(kv, subredditId);
-      const displayName = context.userName
-        ? `u/${context.userName}`
+      const displayName = context.username
+        ? `u/${context.username}`
         : `Player ${userHash.slice(0, 6)}`;
 
       if (demo) {
@@ -183,51 +184,91 @@ const server = createServer(async (req, res) => {
         return;
       }
 
-      const applyRes = await applyContributions(
-        kv,
-        subredditId,
-        dayKey,
-        cfg,
-        [{ kind: "SYSTEM", count: 1, baseEnergyPerEvent: 10 }],
-        { userHash: "system", display: "System" }
-      );
-
-      const boost =
-        applyRes.deltaEnergy > 0
-          ? {
-              source: "SYSTEM",
-              deltaEnergy: applyRes.deltaEnergy,
-              multiplier: applyRes.appliedMultiplier?.value,
-              multiplierDurationMs: applyRes.appliedMultiplier?.durationMs,
-            }
-          : undefined;
-
-      // Record normal poll audit event
-      if (boost) {
-        await pushAuditEvent(kv, subredditId, dayKey, {
-          type: "BOOST_APPLIED",
-          source: "SYSTEM",
-          deltaEnergy: boost.deltaEnergy,
-          multiplier: boost.multiplier ?? null,
-          at: Date.now(),
-          meta: { reason: "Auto poll" },
-        });
+      // ---- Fetch real Reddit post stats ----
+      if (postId === "unknown_post") {
+        console.warn("[KF] Poll: no postId available, skipping stats fetch");
+        sendJson(res, { ok: true, boost: undefined, penalty: undefined, rateLimited: false });
+        return;
       }
 
-      // ---- Downvote pressure ----
-      // Use a simple simulated delta for now (real stats uses postStats)
-      // The poll cursor tracks lastScore; negative delta = downvotes
+      const stats = await getPostStats(postId);
+      console.log(`[KF] Poll stats for ${postId}: comments=${stats.commentCount}, score=${stats.score}`);
       const { kPoll: kPollKey } = await import("./kv/keys");
       const pollKey = kPollKey(subredditId, dayKey);
-      const cursor = (await kv.get(pollKey)) || { lastCommentCount: 0, lastScore: 0, lastDeltaDown: 0, updatedAt: 0 };
+      const cursor = (await kv.get(pollKey)) || {
+        lastCommentCount: 0,
+        lastScore: 0,
+        lastDeltaComments: 0,
+        lastDeltaUpvotes: 0,
+        lastDeltaDown: 0,
+        updatedAt: 0,
+      };
 
-      // TODO: replace with actual post stats when available
-      // For now we re-use the cursor; real flow would fetch reddit post score
-      // deltaScore = currentScore - cursor.lastScore; deltaDown = max(0, -deltaScore)
-      // Since we don't have live score yet, penalty only triggers from real score drops.
-      // Stub: no penalty from auto-poll (only real stats flow)
-      const deltaDown = 0;
+      // Compute deltas
+      const rawDeltaComments = Math.max(0, stats.commentCount - cursor.lastCommentCount);
+      const rawDeltaScore = stats.score - cursor.lastScore;
+      const deltaUpvotes = Math.max(0, rawDeltaScore);
+      const deltaDown = Math.max(0, -rawDeltaScore);
+
+      // Cap per-poll deltas
+      const cappedComments = Math.min(rawDeltaComments, CAP_COMMENTS);
+      const cappedUpvotes = Math.min(deltaUpvotes, CAP_UPVOTES);
       const cappedDown = Math.min(deltaDown, CAP_NET_DOWN);
+
+      // Build contribution events from real stats
+      const events: { kind: "COMMENT" | "UPVOTE" | "SYSTEM"; count: number; baseEnergyPerEvent: number }[] = [];
+      if (cappedComments > 0) {
+        events.push({ kind: "COMMENT", count: cappedComments, baseEnergyPerEvent: 2 });
+      }
+      if (cappedUpvotes > 0) {
+        events.push({ kind: "UPVOTE", count: cappedUpvotes, baseEnergyPerEvent: 1 });
+      }
+
+      let boost: any = undefined;
+      let applyRes: any = { deltaEnergy: 0 };
+
+      if (events.length > 0) {
+        applyRes = await applyContributions(
+          kv,
+          subredditId,
+          dayKey,
+          cfg,
+          events,
+          { userHash: "system", display: "System" }
+        );
+
+        if (applyRes.deltaEnergy > 0) {
+          boost = {
+            source: "SYSTEM",
+            deltaEnergy: applyRes.deltaEnergy,
+            multiplier: applyRes.appliedMultiplier?.value,
+            multiplierDurationMs: applyRes.appliedMultiplier?.durationMs,
+          };
+
+          await pushAuditEvent(kv, subredditId, dayKey, {
+            type: "BOOST_APPLIED",
+            source: "SYSTEM",
+            deltaEnergy: boost.deltaEnergy,
+            multiplier: boost.multiplier ?? null,
+            at: Date.now(),
+            meta: {
+              reason: "Reddit activity",
+              deltaComments: cappedComments,
+              deltaUpvotes: cappedUpvotes,
+            },
+          });
+        }
+      }
+
+      // Update poll cursor with current values
+      await kv.set(pollKey, {
+        lastCommentCount: stats.commentCount,
+        lastScore: stats.score,
+        lastDeltaComments: cappedComments,
+        lastDeltaUpvotes: cappedUpvotes,
+        lastDeltaDown: cappedDown,
+        updatedAt: Date.now(),
+      });
 
       let penalty: any = undefined;
       if (cappedDown > 0) {
@@ -244,10 +285,6 @@ const server = createServer(async (req, res) => {
           at: Date.now(),
           meta: { cappedDown, deltaEnergyApplied: penaltyResult.deltaEnergyApplied },
         });
-
-        // Update cursor with downvote delta
-        cursor.lastDeltaDown = cappedDown;
-        await kv.set(pollKey, { ...cursor, updatedAt: Date.now() });
 
         penalty = {
           reason: "Downvote pressure",
@@ -269,14 +306,14 @@ const server = createServer(async (req, res) => {
 
       const cfg = await loadConfig(kv, subredditId);
       const { dayKey } = await rolloverIfNeeded(kv, subredditId);
-      const displayName = context.userName
-        ? `u/${context.userName}`
+      const displayName = context.username
+        ? `u/${context.username}`
         : `Player ${userHash.slice(0, 6)}`;
 
       await castVote(kv, subredditId, dayKey, userHash, body.optionId);
 
       const optionEnergy = 5;
-      const display = context.userName ? `u/${context.userName}` : undefined;
+      const display = context.username ? `u/${context.username}` : undefined;
       await applyContributions(
         kv,
         subredditId,
@@ -300,8 +337,8 @@ const server = createServer(async (req, res) => {
 
     if (key === "POST /api/claim") {
       const { dayKey } = await rolloverIfNeeded(kv, subredditId);
-      const displayName = context.userName
-        ? `u/${context.userName}`
+      const displayName = context.username
+        ? `u/${context.username}`
         : `Player ${userHash.slice(0, 6)}`;
 
       const before = await getStateSync(kv, subredditId, userHash);
