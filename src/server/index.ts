@@ -192,7 +192,7 @@ const server = createServer(async (req, res) => {
       }
 
       const stats = await getPostStats(postId);
-      console.log(`[KF] Poll stats for ${postId}: comments=${stats.commentCount}, score=${stats.score}`);
+      console.log(`[KF] Poll stats for ${postId}: comments=${stats.commentCount}, score=${stats.score}, ok=${stats.ok}`);
       const { kPoll: kPollKey } = await import("./kv/keys");
       const pollKey = kPollKey(subredditId, dayKey);
       const cursor = (await kv.get(pollKey)) || {
@@ -205,16 +205,22 @@ const server = createServer(async (req, res) => {
       };
       console.log(`[KF] Poll cursor: lastComments=${cursor.lastCommentCount}, lastScore=${cursor.lastScore}`);
 
-      // Compute deltas
-      const rawDeltaComments = Math.max(0, stats.commentCount - cursor.lastCommentCount);
-      const rawDeltaScore = stats.score - cursor.lastScore;
-      const deltaUpvotes = Math.max(0, rawDeltaScore);
-      const deltaDown = Math.max(0, -rawDeltaScore);
+      // Only compute deltas if the API call succeeded — otherwise we'd
+      // compare stale cursor against 0 and get negative (clamped to 0)
+      let cappedComments = 0;
+      let cappedUpvotes = 0;
+      let cappedDown = 0;
 
-      // Cap per-poll deltas
-      const cappedComments = Math.min(rawDeltaComments, CAP_COMMENTS);
-      const cappedUpvotes = Math.min(deltaUpvotes, CAP_UPVOTES);
-      const cappedDown = Math.min(deltaDown, CAP_NET_DOWN);
+      if (stats.ok) {
+        const rawDeltaComments = Math.max(0, stats.commentCount - cursor.lastCommentCount);
+        const rawDeltaScore = stats.score - cursor.lastScore;
+        const deltaUpvotes = Math.max(0, rawDeltaScore);
+        const deltaDown = Math.max(0, -rawDeltaScore);
+
+        cappedComments = Math.min(rawDeltaComments, CAP_COMMENTS);
+        cappedUpvotes = Math.min(deltaUpvotes, CAP_UPVOTES);
+        cappedDown = Math.min(deltaDown, CAP_NET_DOWN);
+      }
 
       console.log(`[KF] Poll deltas: comments=${cappedComments}, upvotes=${cappedUpvotes}, down=${cappedDown}`);
 
@@ -268,10 +274,10 @@ const server = createServer(async (req, res) => {
         });
       }
 
-      // Update poll cursor with current values
+      // Update poll cursor — only update absolute counts if API succeeded
       await kv.set(pollKey, {
-        lastCommentCount: stats.commentCount,
-        lastScore: stats.score,
+        lastCommentCount: stats.ok ? stats.commentCount : cursor.lastCommentCount,
+        lastScore: stats.ok ? stats.score : cursor.lastScore,
         lastDeltaComments: cappedComments,
         lastDeltaUpvotes: cappedUpvotes,
         lastDeltaDown: cappedDown,
@@ -301,7 +307,22 @@ const server = createServer(async (req, res) => {
         };
       }
 
-      sendJson(res, { ok: true, boost, penalty, rateLimited: false });
+      sendJson(res, {
+        ok: true,
+        boost,
+        penalty,
+        rateLimited: false,
+        _debug: {
+          postId,
+          rawComments: stats.commentCount,
+          rawScore: stats.score,
+          cursorComments: cursor.lastCommentCount,
+          cursorScore: cursor.lastScore,
+          deltaComments: cappedComments,
+          deltaUpvotes: cappedUpvotes,
+          deltaDown: cappedDown,
+        },
+      });
       return;
     }
 
