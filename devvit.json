@@ -1,0 +1,35 @@
+{
+  "$schema": "https://developers.reddit.com/schema/config-file.v1.json",
+  "name": "karmafoundry",
+
+  "post": {
+    "dir": "dist/client",
+    "entrypoints": {
+      "default": {
+        "entry": "index.html",
+        "height": "tall"
+      }
+    }
+  },
+
+  "server": {
+    "entry": "index.cjs"
+  },
+
+  "menu": {
+    "items": [
+      {
+        "label": "Create KarmaFoundry Post",
+        "description": "Creates a new KarmaFoundry game post",
+        "location": "subreddit",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/post-create"
+      }
+    ]
+  },
+
+  "permissions": {
+    "redis": true,
+    "reddit": { "enable": true }
+  }
+}

@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KarmaFoundry Game</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #1a1a2e;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      font-family: sans-serif;
+    }
+    #game-canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    #placeholder {
+      text-align: center;
+      color: #fff;
+    }
+    .factory {
+      font-size: 100px;
+      animation: spin 4s linear infinite;
+    }
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <!-- Placeholder until actual GameMaker build is ready -->
+  <div id="placeholder">
+    <div class="factory">🏭</div>
+    <h2>KarmaFoundry</h2>
+    <p>Factory animation powered by GameMaker</p>
+    <p style="font-size: 12px; color: #888; margin-top: 20px;">
+      Replace this file with your exported GameMaker HTML5 build
+    </p>
+  </div>
+
+  <!-- GameMaker Bridge Shim -->
+  <script src="/gamemaker/bridge.js"></script>
+
+  <!-- 
+    INTEGRATION INSTRUCTIONS FOR GAMEMAKER:
+    
+    1. Export your GameMaker project as HTML5
+    2. Replace this entire file with the exported index.html
+    3. Add the bridge code above to your exported index.html (before closing </body>)
+    4. In your GameMaker project (GML):
+       
+       // On game start:
+       html5_run_script("window.KF.markReady()");
+       
+       // In a step event (poll for events):
+       var json = html5_run_script("window.KF.pop()");
+       if (json != "") {
+         var event = json_parse(json);
+         if (event.type == "STATE_SYNC") {
+           // Update game state
+         } else if (event.type == "BOOST_APPLIED") {
+           // Play boost animation
+         }
+       }
+  -->
+</body>
+</html>
