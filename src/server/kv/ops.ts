@@ -539,11 +539,16 @@ export async function getStateSync(
   const demoLastAt = demoLastAtRaw ? (typeof demoLastAtRaw === "number" ? demoLastAtRaw : parseInt(demoLastAtRaw, 10)) : null;
   const demoUsedToday = demoCountRaw ? (typeof demoCountRaw === "number" ? demoCountRaw : parseInt(demoCountRaw, 10)) : 0;
 
+  // Compute real Reddit post deltas (not contribution event totals)
+  // Δ Comments/Upvotes should show actual post activity, not fake demo boost counts
+  const realCommentDelta = pollCursor?.lastCommentCount ?? 0;
+  const realUpvoteDelta = Math.max(0, (pollCursor?.lastScore ?? 0) - 1); // Subtract author's auto-upvote
+
   const audit: AuditSyncData = {
     dayKey,
     lastPollAt: pollCursor?.updatedAt ?? null,
-    lastDeltaComments: state.totals.comments,
-    lastDeltaUpvotes: state.totals.upvotes,
+    lastDeltaComments: realCommentDelta,
+    lastDeltaUpvotes: realUpvoteDelta,
     lastDeltaDown: pollCursor?.totalDeltaDown ?? 0,
     multiplierActive,
     multiplierValue: multiplierActive ? state.activeMultiplier!.value : null,
