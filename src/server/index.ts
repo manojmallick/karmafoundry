@@ -17,6 +17,10 @@ import {
 import { CAP_NET_DOWN, ENERGY_PENALTY_PER_DOWN, CAP_COMMENTS, CAP_UPVOTES } from "../shared/constants";
 import { getPostStats } from "./reddit/postStats";
 
+// Demo boost guardrails (judge-proof)
+const DEMO_COOLDOWN_MS = 30 * 1000; // 30 seconds between demo boosts
+const DEMO_MAX_PER_DAY = 5; // Maximum 5 demo boosts per day per subreddit
+
 // ---- Helpers ----
 
 function hashUserId(userId: string): string {
@@ -149,19 +153,75 @@ const server = createServer(async (req, res) => {
         : `Player ${userHash.slice(0, 6)}`;
 
       if (demo) {
+        // Guardrail 1: Mod-only enforcement
         const isMod = await isCurrentUserMod();
         if (!isMod) {
           await pushAuditEvent(kv, subredditId, dayKey, {
             type: "DEMO_DENIED",
             source: userHash,
             at: Date.now(),
-            meta: { action: "demoBoost" },
+            meta: { action: "demoBoost", reason: "not_moderator" },
           });
-          sendJson(res, { ok: false, error: "DEMO_FORBIDDEN" }, 403);
+          sendJson(res, { ok: false, forbidden: true, reason: "DEMO_MOD_ONLY" }, 403);
           return;
         }
 
+        // Guardrail 2: Cooldown check (30 seconds between demo boosts)
+        const { kDemoLastAt, kDemoCount } = await import("./kv/keys");
+        const demoLastAtKey = kDemoLastAt(subredditId, dayKey);
+        const demoCountKey = kDemoCount(subredditId, dayKey);
+        
+        const now = Date.now();
+        const lastAtRaw = await kv.get(demoLastAtKey);
+        const lastAt = lastAtRaw ? (typeof lastAtRaw === "number" ? lastAtRaw : parseInt(lastAtRaw, 10)) : 0;
+        
+        if (lastAt > 0) {
+          const remainingMs = DEMO_COOLDOWN_MS - (now - lastAt);
+          if (remainingMs > 0) {
+            const retryAfterSec = Math.ceil(remainingMs / 1000);
+            await pushAuditEvent(kv, subredditId, dayKey, {
+              type: "DEMO_DENIED",
+              source: userHash,
+              at: now,
+              meta: { action: "demoBoost", reason: "cooldown", retryAfterSec },
+            });
+            sendJson(res, {
+              ok: false,
+              rateLimited: true,
+              retryAfterSec,
+              reason: "DEMO_COOLDOWN"
+            }, 429);
+            return;
+          }
+        }
+
+        // Guardrail 3: Daily cap check (max 5 demo boosts per day)
+        const countRaw = await kv.get(demoCountKey);
+        const count = countRaw ? (typeof countRaw === "number" ? countRaw : parseInt(countRaw, 10)) : 0;
+        
+        if (count >= DEMO_MAX_PER_DAY) {
+          await pushAuditEvent(kv, subredditId, dayKey, {
+            type: "DEMO_DENIED",
+            source: userHash,
+            at: now,
+            meta: { action: "demoBoost", reason: "daily_cap", count },
+          });
+          sendJson(res, {
+            ok: false,
+            limitReached: true,
+            reason: "DEMO_DAILY_CAP",
+            usedToday: count,
+            maxPerDay: DEMO_MAX_PER_DAY
+          }, 429);
+          return;
+        }
+
+        // All guardrails passed — apply demo boost
         const applyRes = await applyDemoBoost(kv, subredditId, dayKey, cfg);
+
+        // Update tracking: increment count and set lastAt
+        await kv.set(demoCountKey, count + 1);
+        await kv.set(demoLastAtKey, now);
 
         await addUserPoints(
           kv,
@@ -172,13 +232,28 @@ const server = createServer(async (req, res) => {
           25
         );
 
+        // Audit: DEMO_BOOST_USED (for transparency/judge-proof)
         await pushAuditEvent(kv, subredditId, dayKey, {
-          type: "BOOST_APPLIED",
-          source: "SYSTEM",
+          type: "DEMO_BOOST_USED",
+          source: userHash,
+          at: now,
           deltaEnergy: applyRes.deltaEnergy,
           multiplier: applyRes.appliedMultiplier?.value ?? null,
-          at: Date.now(),
-          meta: { reason: "Demo boost" },
+          meta: {
+            byUser: context.username ? `u/${context.username}` : userHash,
+            usedToday: count + 1,
+            maxPerDay: DEMO_MAX_PER_DAY,
+          },
+        });
+
+        // Audit: BOOST_APPLIED (for UI/GameMaker)
+        await pushAuditEvent(kv, subredditId, dayKey, {
+          type: "BOOST_APPLIED",
+          source: "DEMO",
+          deltaEnergy: applyRes.deltaEnergy,
+          multiplier: applyRes.appliedMultiplier?.value ?? null,
+          at: now,
+          meta: { reason: "Demo boost (mod-only)" },
         });
 
         sendJson(res, {

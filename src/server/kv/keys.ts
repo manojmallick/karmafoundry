@@ -16,3 +16,5 @@ export const kContribList = (s: string, d: string) => `${NS}:${s}:${d}:contribut
 export const kTop3 = (s: string, d: string) => `${NS}:${s}:${d}:top3`;
 export const kCompletedAt = (s: string, d: string) => `${NS}:${s}:${d}:completedAt`;
 export const kCompletedNotified = (s: string, d: string) => `${NS}:${s}:${d}:completedNotified`;
+export const kDemoLastAt = (s: string, d: string) => `${NS}:${s}:${d}:demo:lastAt`;
+export const kDemoCount = (s: string, d: string) => `${NS}:${s}:${d}:demo:count`;

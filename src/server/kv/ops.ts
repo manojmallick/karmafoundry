@@ -532,6 +532,13 @@ export async function getStateSync(
     }
   }
 
+  // Load demo boost guardrail stats (judge-proof transparency)
+  const { kDemoLastAt, kDemoCount } = await import("./keys");
+  const demoLastAtRaw = await kv.get(kDemoLastAt(subredditId, dayKey));
+  const demoCountRaw = await kv.get(kDemoCount(subredditId, dayKey));
+  const demoLastAt = demoLastAtRaw ? (typeof demoLastAtRaw === "number" ? demoLastAtRaw : parseInt(demoLastAtRaw, 10)) : null;
+  const demoUsedToday = demoCountRaw ? (typeof demoCountRaw === "number" ? demoCountRaw : parseInt(demoCountRaw, 10)) : 0;
+
   const audit: AuditSyncData = {
     dayKey,
     lastPollAt: pollCursor?.updatedAt ?? null,
@@ -544,6 +551,12 @@ export async function getStateSync(
       ? state.activeMultiplier!.expiresAt
       : null,
     last10Events: auditEvents,
+    // Demo boost guardrails (30s cooldown, 5/day cap, mod-only)
+    demoEnabled: true,
+    demoCooldownSec: 30,
+    demoMaxPerDay: 5,
+    demoUsedToday,
+    demoLastAt,
   };
 
   return {
