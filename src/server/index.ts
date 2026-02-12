@@ -203,6 +203,7 @@ const server = createServer(async (req, res) => {
         lastDeltaDown: 0,
         updatedAt: 0,
       };
+      console.log(`[KF] Poll cursor: lastComments=${cursor.lastCommentCount}, lastScore=${cursor.lastScore}`);
 
       // Compute deltas
       const rawDeltaComments = Math.max(0, stats.commentCount - cursor.lastCommentCount);
@@ -214,6 +215,8 @@ const server = createServer(async (req, res) => {
       const cappedComments = Math.min(rawDeltaComments, CAP_COMMENTS);
       const cappedUpvotes = Math.min(deltaUpvotes, CAP_UPVOTES);
       const cappedDown = Math.min(deltaDown, CAP_NET_DOWN);
+
+      console.log(`[KF] Poll deltas: comments=${cappedComments}, upvotes=${cappedUpvotes}, down=${cappedDown}`);
 
       // Build contribution events from real stats
       const events: { kind: "COMMENT" | "UPVOTE" | "SYSTEM"; count: number; baseEnergyPerEvent: number }[] = [];
@@ -236,6 +239,7 @@ const server = createServer(async (req, res) => {
           events,
           { userHash: "system", display: "System" }
         );
+        console.log(`[KF] Poll applied: deltaEnergy=${applyRes.deltaEnergy}, multiplier=${applyRes.appliedMultiplier?.value ?? 1}`);
 
         if (applyRes.deltaEnergy > 0) {
           boost = {

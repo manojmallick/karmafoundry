@@ -535,8 +535,8 @@ export async function getStateSync(
   const audit: AuditSyncData = {
     dayKey,
     lastPollAt: pollCursor?.updatedAt ?? null,
-    lastDeltaComments: pollCursor?.lastCommentCount ?? 0,
-    lastDeltaUpvotes: pollCursor?.lastScore ?? 0,
+    lastDeltaComments: pollCursor?.lastDeltaComments ?? 0,
+    lastDeltaUpvotes: pollCursor?.lastDeltaUpvotes ?? 0,
     lastDeltaDown: pollCursor?.lastDeltaDown ?? 0,
     multiplierActive,
     multiplierValue: multiplierActive ? state.activeMultiplier!.value : null,
