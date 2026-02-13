@@ -125,10 +125,6 @@ export interface AuditSyncData {
   multiplierValue: number | null;
   multiplierExpiresAt: number | null;
   last10Events: AuditEvent[];
-  // Demo boost guardrails (judge-proof transparency)
+  // Demo boost (mod-only, no rate limits)
   demoEnabled: boolean;
-  demoCooldownSec: number;
-  demoMaxPerDay: number;
-  demoUsedToday: number;
-  demoLastAt: number | null;
 }
