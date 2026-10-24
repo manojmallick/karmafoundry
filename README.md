@@ -38,6 +38,12 @@ A collaborative Reddit game where community participation powers a virtual facto
 - **Toast notifications**: Real-time feedback for boosts and penalties
 - **Audit panel**: Dev transparency (polls, deltas, multipliers, events)
 
+## Prerequisites
+
+- Node.js 18+ and npm
+- A Reddit account with permission to install apps on a test subreddit you moderate
+- The Devvit CLI (installed as a dev dependency; run it with `npx devvit ...`). Sign in once with `npx devvit login`
+
 ## Quick Start
 
 ### 1. Install Dependencies
@@ -71,6 +77,7 @@ karmafoundry/
   │   │   ├── main.tsx      # Entry point
   │   │   ├── AppShell.tsx  # Main component
   │   │   └── ui/           # UI components
+  │   ├── shared/           # Constants shared by client and server
   │   └── server/           # Backend
   │       ├── index.ts      # fetch() handler (routes here)
   │       ├── kv/           # KV storage operations
@@ -81,6 +88,24 @@ karmafoundry/
   ├── devvit.json           # Devvit 0.12 config
   └── vite.config.ts        # Vite build config
 ```
+
+## Configuration (`devvit.json`)
+
+| Setting | Value | Meaning |
+|---|---|---|
+| `post.dir` | `dist/client` | Built React app shown inside the Reddit post (`tall` height) |
+| `server.entry` | `index.cjs` | Bundled server handling `/api/*` routes |
+| `menu` | "Create KarmaFoundry Post" | Moderator-only subreddit menu action that creates a new game post |
+| `permissions` | `redis`, `reddit` | Lets the app store game state in Redis/KV and read post stats via the Reddit API |
+
+Game constants (energy per tick, daily goal, caps) live in `src/shared/constants.ts`.
+
+## Using it in a subreddit
+
+1. Run `npm run build`, then `npm run upload` to push a version to Reddit.
+2. Install the app on your test subreddit.
+3. As a moderator, use the subreddit menu action **Create KarmaFoundry Post**.
+4. Open the post and play. Use the mod-only demo boost (`POST /api/poll?demo=1`) to test victory without waiting for real activity.
 
 ## API Endpoints
 
@@ -127,15 +152,15 @@ All handled in `src/server/index.ts`:
 | `npm run build` | Build client and server |
 | `npm run build:client` | Build React app |
 | `npm run build:server` | Build server bundle |
+| `npm run upload` | `devvit upload` (alias) |
+| `npm run publish` | `devvit publish` (alias) |
 | `devvit upload` | Deploy to Devvit |
 | `devvit publish` | Publish to production |
 
 ## Documentation
 
-- **[DEVVIT_012_MIGRATION.md](DEVVIT_012_MIGRATION.md)** - Migration guide (read this!)
-- **[DEV_GUIDE.md](DEV_GUIDE.md)** - Development guide
-- **[DEMO.md](DEMO.md)** - Demo script
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** - System architecture
+- [Devvit documentation](https://developers.reddit.com/docs) - platform reference (client/server web apps, Redis, Reddit API)
 
 ## Devvit 0.12 Benefits
 
@@ -173,7 +198,7 @@ npm run build:client
 - Ensure `public/gamemaker/index.html` exists
 - Check path is `/gamemaker/index.html`
 
-See [DEVVIT_012_MIGRATION.md](DEVVIT_012_MIGRATION.md) for detailed troubleshooting.
+For platform-level problems see the [Devvit documentation](https://developers.reddit.com/docs).
 
 ## Ready to Deploy?
 
