@@ -98,7 +98,7 @@ karmafoundry/
 | `menu` | "Create KarmaFoundry Post" | Moderator-only subreddit menu action that creates a new game post |
 | `permissions` | `redis`, `reddit` | Lets the app store game state in Redis/KV and read post stats via the Reddit API |
 
-Game constants (energy per tick, daily goal, caps) live in `src/shared/constants.ts`.
+Poll interval, contribution caps and the downvote penalty live in `src/shared/constants.ts`; the daily energy goal (10,000) is set in `src/server/kv/ops.ts`.
 
 ## Using it in a subreddit
 
