@@ -209,7 +209,7 @@ For platform-level problems see the [Devvit documentation](https://developers.re
 
 ## License
 
-MIT
+BSD-3-Clause. See [LICENSE](LICENSE).
 
 ---
 
